@@ -31,8 +31,13 @@ typedef NS_ENUM(NSUInteger,CommandState){
 //连接蓝牙失败
 -(void)connectFail;
 
+
+
+
 @end
-@interface BlueTooth : NSObject<CBPeripheralDelegate,CBCentralManagerDelegate>
+@interface BlueTooth : NSObject<CBPeripheralDelegate,CBCentralManagerDelegate>{
+    NSInteger index;
+}
 
 //代理
 @property (nonatomic, weak) id<BlueToothDelegate> delegate;
@@ -40,6 +45,7 @@ typedef NS_ENUM(NSUInteger,CommandState){
 @property (nonatomic,strong) CBCentralManager *centralManager;
 //外设
 @property (nonatomic,strong) CBPeripheral *peripheral;
+@property(nonatomic,strong)CBCharacteristic *notifyCharteristic;
 //特征
 @property (nonatomic, strong) CBCharacteristic *characteristic;
 @property(nonatomic,strong)CBCentralManager *central;//中心设备管理
@@ -53,5 +59,11 @@ typedef NS_ENUM(NSUInteger,CommandState){
 - (void)startConnect;
 //断开连接
 - (void)endConnect;
+
+-(void)open;
+-(void)close;
+-(void)query;
+
+
 
 @end

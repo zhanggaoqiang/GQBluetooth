@@ -8,6 +8,10 @@
 
 #import "BlueTooth.h"
 @implementation BlueTooth
+
+#define kServiceUUID        @"0003CDD0-0000-1000-8000-00805F9B0131" //服务的UUID
+#define kWriteCharacteristicUUID @"0003CDD2-0000-1000-8000-00805F9B0131" //特征的UUID
+#define kNotifyCharacteristicUUID @"0003CDD1-0000-1000-8000-00805F9B0131" //特征的UUID
  static id _instance;
 /**
  创建单例对象
@@ -77,8 +81,8 @@
     NSString *msg = [NSString stringWithFormat:@"信号强度: %@, 外设: %@", RSSI, peripheral];
     NSLog(@"%@",msg);
     //ZIH0491300//
-    NSLog(@"此时外设名字是%@",_peripheralName);
-    NSAssert(![_peripheralName isEqualToString:@""]||_peripheralName==nil, @"please init correct peripheralName");
+//    NSLog(@"此时外设名字是%@",_peripheralName);
+//    NSAssert(![_peripheralName isEqualToString:@""]||_peripheralName==nil, @"please init correct peripheralName");断言
         if ([peripheral.name isEqualToString:_peripheralName])
         {
             //连接外部设备
@@ -92,17 +96,10 @@
             
         }
 }
-
-//处理Objective-C的断言
-- (void)handleFailureInMethod:(SEL)selector object:(id)object file:(NSString *)fileName lineNumber:(NSInteger)line description:(NSString *)format,...
-{
-    NSLog(@"NSAssert Failure: Method %@ for object %@ in %@#%li", NSStringFromSelector(selector), object, fileName, (long)line);
-}
-
 //连接失败
 - (void)centralManager:(CBCentralManager *)central didFailToConnectPeripheral:(CBPeripheral *)peripheral error:(NSError *)error
 {
-    NSLog(@"%@",error.localizedDescription);
+    NSLog(@"连接失败%@",error.localizedDescription);
     if ([self.delegate respondsToSelector:@selector(connectFail)]) {
         [self.delegate connectFail];
     }
@@ -120,7 +117,6 @@
     [peripheral discoverServices:nil];
 }
 
-
 //如果连接上的两个设备突然断开了，程序里面会自动回调下面的方法
 -   (void)centralManager:(CBCentralManager *)central didDisconnectPeripheral:(CBPeripheral *)peripheral error:(NSError *)error
 {
@@ -130,7 +126,6 @@
 // 外设端发现了服务时触发
 - (void)peripheral:(CBPeripheral *)peripheral didDiscoverServices:(NSError *)error
 {
-    NSLog(@"%@",peripheral.services);
     if (error)
     {
         NSLog(@"%@",error.localizedDescription);
@@ -138,30 +133,59 @@
     }
     for (CBService *service in peripheral.services)
     {
-        [peripheral discoverCharacteristics:nil forService:service];
+        if ([service.UUID.UUIDString isEqualToString:kServiceUUID]) {
+              [peripheral discoverCharacteristics:nil forService:service];
+        }
     }
 }
-
 
 //从服务获取特征
 -(void)peripheral:(CBPeripheral *)peripheral didDiscoverCharacteristicsForService:(CBService *)service error:(NSError *)error
 {
-    NSLog(@"%@",service.characteristics);
+   NSLog(@"%@",service.characteristics);
     for (CBCharacteristic *characteristic in service.characteristics)
     {
-        if (self.command==CommandStateQuery) {
-            NSData *data = [@"" dataUsingEncoding:NSUTF8StringEncoding];
-            [self.peripheral writeValue:data forCharacteristic:characteristic type:0x04];
-            self.characteristic = characteristic;
-        }
         
-        if (self.command==CommandStateOpen) {
-            NSData *data = [@"&123&123&1&" dataUsingEncoding:NSUTF8StringEncoding];
-            [self.peripheral writeValue:data forCharacteristic:characteristic type:0x04];
-            self.characteristic = characteristic;
+        if ([characteristic.UUID.UUIDString isEqualToString:kWriteCharacteristicUUID]  ) {
+             self.characteristic = characteristic;
         }
-        [peripheral setNotifyValue:YES forCharacteristic:characteristic];
+        if ([characteristic.UUID.UUIDString isEqualToString:kNotifyCharacteristicUUID]) {
+            self.notifyCharteristic=characteristic;
+        }
+      
     }
+}
+
+#pragma mark 写数据后回调
+- (void)peripheral:(CBPeripheral *)peripheral didWriteValueForCharacteristic:(CBCharacteristic *)characteristic  error:(NSError *)error {
+    if (error) {
+        NSLog(@"Error writing characteristic value: %@",
+              [error localizedDescription]);
+        return;
+    }
+    NSLog(@"写入%@成功",characteristic);
+}
+
+
+-(void)query{
+    [self.peripheral setNotifyValue:YES forCharacteristic:self.notifyCharteristic];
+}
+/**
+ 打开蓝牙
+ */
+-(void)open{
+    NSData *data = [@"&1&1&1&1" dataUsingEncoding:NSUTF8StringEncoding];
+    [self.peripheral writeValue:data forCharacteristic:self.characteristic type:0x04];
+     [self.peripheral setNotifyValue:YES forCharacteristic:self.notifyCharteristic];
+}
+
+/**
+ 关闭蓝牙
+ */
+-(void)close{
+    NSData *data = [@"&&&2&" dataUsingEncoding:NSUTF8StringEncoding];
+    [self.peripheral writeValue:data forCharacteristic:self.characteristic type:0x04];
+     [self.peripheral setNotifyValue:YES forCharacteristic:self.notifyCharteristic];
 }
 
 //将十六进制的字符串转换成NSString则可使用如下方式:
@@ -169,7 +193,6 @@
     if (!str || [str length] == 0) {
         return nil;
     }
-    
     NSMutableData *hexData = [[NSMutableData alloc] initWithCapacity:8];
     NSRange range;
     if ([str length] % 2 == 0) {
@@ -181,11 +204,9 @@
         unsigned int anInt;
         NSString *hexCharStr = [str substringWithRange:range];
         NSScanner *scanner = [[NSScanner alloc] initWithString:hexCharStr];
-        
         [scanner scanHexInt:&anInt];
         NSData *entity = [[NSData alloc] initWithBytes:&anInt length:1];
         [hexData appendData:entity];
-        
         range.location += range.length;
         range.length = 2;
     }
@@ -193,11 +214,11 @@
     return string;
 }
 
-
 //收到数据,并且通知代理接受数据，并实现相关功能
 - (void)peripheral:(CBPeripheral *)peripheral didUpdateValueForCharacteristic:(CBCharacteristic *)characteristic error:(NSError *)error
 {
     NSString *results=[[NSString alloc] initWithData:characteristic.value encoding:NSUTF8StringEncoding];
+   
         if ([self.delegate respondsToSelector:@selector(receivedValue:)]) {
             [self.delegate receivedValue:results];
         }
